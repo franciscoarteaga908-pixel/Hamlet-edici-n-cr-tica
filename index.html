@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Hamlet — Edición crítica</title>
+
+  <!-- Fuente -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@300;400;700&display=swap" rel="stylesheet">
+
+  <!-- CSS principal -->
+  <link rel="stylesheet" href="css/tei.css">
+
+  <!-- CETEIcean -->
+  <script src="js/CETEI.js"></script>
+
+</head>
+<body class="show-english">
+
+<!-- ====================================
+       HEADER DEL DOCUMENTO (TEI HEADER)
+===================================== -->
+<div id="mainHeader"></div>
+
+<!-- ====================================
+       BOTONES DE CAMBIO DE VISTA
+===================================== -->
+<div id="viewSelector">
+  <button id="btnEnglish">Inglés + aparato crítico</button>
+  <button id="btnSpanish">Versión en español</button>
+</div>
+
+<!-- ====================================
+          LEYENDA DEL APARATO
+===================================== -->
+<div id="legend">
+  <h3>Convenciones del aparato crítico</h3>
+
+  <div class="legend-item">
+    <span class="legend-box legend-q1"></span> Testigo Q1
+  </div>
+  <div class="legend-item">
+    <span class="legend-box legend-q2"></span> Testigo Q2
+  </div>
+  <div class="legend-item">
+    <span class="legend-box legend-f1"></span> Folio F1
+  </div>
+</div>
+
+<!-- ====================================
+             CONTENEDORES
+===================================== -->
+<div id="englishView"></div>
+<div id="spanishView"></div>
+
+<!-- ====================================
+             SCRIPT PRINCIPAL
+===================================== -->
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+
+  let c = new CETEI();
+
+  // behaviors: sin override del teiHeader
+  let behaviors = {
+    "tei": {
+      "head": function(e) {
+        let level = document.evaluate(
+          "count(ancestor::tei-div)",
+          e,
+          null,
+          XPathResult.NUMBER_TYPE,
+          null
+        );
+        let h = document.createElement(
+          "h" + (level.numberValue > 7 ? 7 : level.numberValue)
+        );
+        Array.from(e.childNodes).forEach(n => h.appendChild(n.cloneNode(true)));
+        return h;
+      },
+      "lb": ["<br>"],
+      "pb": ["<p class='break'>$@n</p>"]
+    }
+  };
+
+  c.addBehaviors(behaviors);
+
+  // Cargar el TEI UNA sola vez
+  c.getHTML5("Hamlet.paralelo.xml", function(doc) {
+
+    // --- 1) Extraer y limpiar header ---
+    // Buscar el elemento transformado por CETEI (nombre en minúsculas)
+    let headerElem = doc.querySelector("tei-teiheader");
+
+    if (headerElem) {
+      // clonar para manipular sin tocar el original
+      let headerClone = headerElem.cloneNode(true);
+
+      // si existe <cetei-original hidden>, reemplazamos por sus hijos
+      let original = headerClone.querySelector("cetei-original");
+      if (original) {
+        // mover hijos del cetei-original al headerClone
+        while (original.firstChild) {
+          headerClone.appendChild(original.firstChild.cloneNode(true));
+          original.removeChild(original.firstChild);
+        }
+        original.remove();
+      }
+
+      // finalmente insertar header limpio en la página
+      let mainHeader = document.getElementById("mainHeader");
+      // vaciar por si hay restos
+      mainHeader.innerHTML = "";
+      mainHeader.appendChild(headerClone);
+    }
+
+    // --- 2) Crear vistas (inglés y español) a partir del documento cargado ---
+    let englishClone = doc.cloneNode(true);
+    let spanishClone = doc.cloneNode(true);
+
+    // eliminar el header de las vistas para evitar duplicación
+    englishClone.querySelector("tei-teiheader")?.remove();
+    spanishClone.querySelector("tei-teiheader")?.remove();
+
+    // filtrar por idioma (remover spans no deseados)
+    englishClone.querySelectorAll('[xml\\:lang="spa"]').forEach(e => e.remove());
+    spanishClone.querySelectorAll('[xml\\:lang="eng"]').forEach(e => e.remove());
+
+    // limpiar posibles <cetei-original> dentro de las vistas
+    englishClone.querySelectorAll("cetei-original").forEach(o => {
+      while (o.firstChild) {
+        o.parentNode.insertBefore(o.firstChild.cloneNode(true), o);
+        o.removeChild(o.firstChild);
+      }
+      o.remove();
+    });
+    spanishClone.querySelectorAll("cetei-original").forEach(o => {
+      while (o.firstChild) {
+        o.parentNode.insertBefore(o.firstChild.cloneNode(true), o);
+        o.removeChild(o.firstChild);
+      }
+      o.remove();
+    });
+
+    // insertar vistas en el DOM
+    document.getElementById("englishView").innerHTML = "";
+    document.getElementById("englishView").appendChild(englishClone);
+
+    document.getElementById("spanishView").innerHTML = "";
+    document.getElementById("spanishView").appendChild(spanishClone);
+
+    // --- 3) Aparato crítico: mostrar TODAS las lecturas (tei-lem y tei-rdg) ---
+    document.getElementById("englishView").querySelectorAll("tei-app").forEach(app => {
+
+      let variants = document.createElement("div");
+      variants.classList.add("variants");
+
+      // copiar todas las lecturas disponibles
+      app.querySelectorAll("tei-lem, tei-rdg").forEach(el => {
+        variants.appendChild(el.cloneNode(true));
+      });
+
+      // reemplazar contenido del app por botón + variants
+      app.innerHTML = "";
+
+      let button = document.createElement("span");
+      button.classList.add("app-button");
+      button.textContent = "Ver variantes";
+
+      app.appendChild(button);
+      app.appendChild(variants);
+
+      button.addEventListener("click", () => {
+        app.classList.toggle("open");
+        button.textContent =
+          app.classList.contains("open") ?
+          "Ocultar variantes" :
+          "Ver variantes";
+      });
+    });
+
+  }, function(err){
+    console.error("Error cargando Hamlet.paralelo.xml:", err);
+  });
+
+  // --- 4) Switch de vistas ---
+  document.getElementById("btnEnglish").onclick = () => {
+    document.body.classList.add("show-english");
+    document.body.classList.remove("show-spanish");
+  };
+
+  document.getElementById("btnSpanish").onclick = () => {
+    document.body.classList.add("show-spanish");
+    document.body.classList.remove("show-english");
+  };
+
+});
+</script>
+
+
+</body>
+</html>
